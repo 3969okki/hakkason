@@ -1,0 +1,135 @@
+#https://discord.com/oauth2/authorize?client_id=1215490842832412793&permissions=8&scope=bot+applications.commands
+import discord
+import jaconv
+import MeCab
+import random
+import json 
+from discord import app_commands
+
+m = MeCab.Tagger('')
+
+
+intents = discord.Intents.all()
+client = discord.Client(intents=intents)
+tree = app_commands.CommandTree(client)
+
+
+def emojiSet():
+    emoji = ''
+    if (random.randrange(2) % 2) == 0:
+        emoji = random.choice('😁😊😃😂😍😢😏🤗')
+    if (random.randrange(2) % 2) == 0:
+        emoji = emoji + random.choice('❤️👍✋💦‼')
+    return emoji
+
+
+def bunsetsuWakachi(text):
+    m_result = m.parse(text).splitlines()
+    m_result = m_result[:-1] #最後の1行は不要な行なので除く
+    #break_pos = ['名詞','動詞','接頭詞','副詞','感動詞','形容詞','形容動詞','連体詞'] #文節の切れ目を検出するための品詞リスト
+    break_pos = ['名詞','動詞','接頭詞','副詞','感動詞','形容動詞','連体詞'] #文節の切れ目を検出するための品詞リスト
+    wakachi = [''] #分かち書きのリスト
+    afterPrepos = False #接頭詞の直後かどうかのフラグ
+    afterSahenNoun = False #サ変接続名詞の直後かどうかのフラグ
+    for v in m_result:
+        if '\t' not in v: continue
+        surface = v.split('\t')[0] #表層系
+        pos = v.split('\t')[1].split(',') #品詞など
+        pos_detail = ','.join(pos[1:4]) #品詞細分類（各要素の内部がさらに'/'で区切られていることがあるので、','でjoinして、inで判定する)
+        #この単語が文節の切れ目とならないかどうかの判定
+        noBreak = pos[0] not in break_pos
+        noBreak = noBreak or '接尾' in pos_detail
+        noBreak = noBreak or (pos[0]=='動詞' and 'サ変接続' in pos_detail)
+        noBreak = noBreak or '非自立' in pos_detail #非自立な名詞、動詞を文節の切れ目としたい場合はこの行をコメントアウトする
+        noBreak = noBreak or afterPrepos
+        noBreak = noBreak or (afterSahenNoun and pos[0]=='動詞' and pos[4]=='サ変・スル')
+        if noBreak == False:
+            wakachi.append("")
+        wakachi[-1] += surface
+        # afterPrepos = pos[0]=='接頭詞'
+        afterSahenNoun = 'サ変接続' in pos_detail
+    if wakachi[0] == '': wakachi = wakachi[1:] #最初が空文字のとき削除する
+    return wakachi
+
+#ここにトークンを追加する
+#
+# すらしゅコマンドの実装
+#with open("idMemory.json", "r", encoding="utf-8") as json_file:
+json_file = open("idMemory.json", "r", encoding="utf-8")
+data = json.load(json_file)
+
+
+@client.event
+async def on_ready():
+    print("起動完了")
+    await tree.sync()
+
+
+@tree.command(name='ohayou', description='Make the bot usable. Please set channelID')
+async def id_set(interaction: discord.Interaction, x: str):
+    global data
+    new_data = {
+        "channelId": x,
+    }
+    data[x] = new_data
+    with open("idMemory.json", "w", encoding="utf-8") as json_file:
+        json.dump(data, json_file, ensure_ascii=False, indent=4)
+        await interaction.response.send_message('今日も頑張っちゃうョ～😁👍')
+
+
+@tree.command(name='oyasumi', description='Make the bot do not usable. Please set channelID')
+async def id_reset(interaction: discord.Interaction, j: str):
+    if (random.randrange(3) % 3) == 0:
+        f = open('idMemory.json', 'r', encoding="utf-8")
+        jsonData = json.load(f)
+
+        del jsonData[j]
+        f.close()
+        f = open('idMemory.json', 'w', encoding="utf-8")
+        json.dump(jsonData, f, indent='\t', ensure_ascii=False)
+        f.close()
+        await interaction.response.send_message('スヤァ😏')
+    else:
+        await interaction.response.send_message('おじさん😏と一緒に寝たいのカナ？ナンチャッテ🤗')
+        
+
+
+@client.event
+async def on_message(message):
+
+    check = str(message.channel.id)
+    json_file = open("idMemory.json", "r", encoding="utf-8")
+    data = json.load(json_file)
+    json_file.close()
+
+    if check not in data:  # IDがjsonfileの中にない場合
+
+        print('hello')
+        return
+    
+    if not message.author.bot:  #発言者がBotでない場合
+
+        channel = client.get_channel(message.channel.id)
+        
+        tmp = message.content
+        tmp2 = bunsetsuWakachi(tmp)
+        ret = ",".join(tmp2)
+        ret = ret.replace(ret[-1:], jaconv.hira2kata(ret[-1:]))
+        
+        emoji = '~' + emojiSet()
+        ret = ret + emoji
+        for i in range(len(ret)):
+            ret = ret.replace(',', random.choice(',、'), 1)
+            emoji = emojiSet()
+            ret = ret.replace(',', emoji, 1)
+
+        pic1 = '> ' + str(message.author) + '\r\n'
+        ret = pic1 + ret
+        if (random.randrange(3) % 3) == 0:
+            ret += 'ナンチャッテ😏'
+        await message.channel.purge(limit = 1)
+        await channel.send(ret)
+        
+        print(ret)
+
+client.run(TOKEN)
